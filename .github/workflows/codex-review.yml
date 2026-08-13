@@ -1,0 +1,48 @@
+name: Codex review
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  review:
+    if: github.event.label.name == 'review:codex' || github.event.label.name == 'review:all'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The agent runs read-only; a separate step below holds the write
+      # permission and posts the comment. Agent proposes, gated step disposes.
+      - uses: openai/codex-action@v1
+        id: codex
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          safety-strategy: read-only
+          output-file: /tmp/codex-review.md
+          prompt: |
+            You are reviewing a pull request. The repository is checked out at
+            the PR head. The base branch is ${{ github.event.pull_request.base.ref }}.
+
+            Run `git diff origin/${{ github.event.pull_request.base.ref }}...HEAD`
+            to see the changes, and read surrounding code as needed. If the
+            repository root contains an AGENTS.md with code review guidelines,
+            follow those guidelines strictly.
+
+            Write the review as your final message. For each finding cite the
+            repository-relative file path and line (e.g. `src/payouts/x.ts:12`,
+            never an absolute path), state the severity you assign, and explain
+            the failure scenario. If nothing qualifies, say so in one line.
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '## Codex review\n\n' > /tmp/comment.md
+          cat /tmp/codex-review.md >> /tmp/comment.md
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} --body-file /tmp/comment.md

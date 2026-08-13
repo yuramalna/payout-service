@@ -1,0 +1,53 @@
+name: Security review (sub-agent)
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  review:
+    if: github.event.label.name == 'review:security'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Same action as claude-review.yml, but the work is delegated to the
+      # security-review subagent defined in .claude/agents/. The subagent does
+      # the reading; this session only receives its findings summary.
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Teaching fixture: we WANT the sub-agent dispatch visible in the run
+          # log, so the delegation is verifiable rather than asserted. Do not
+          # copy this into a repo whose prompts or context are sensitive.
+          show_full_output: true
+          prompt: |
+            Use the security-review subagent to review pull request
+            #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            Give the subagent the diff to sweep: run
+            `git diff origin/${{ github.event.pull_request.base.ref }}...HEAD`.
+
+            Dispatch the subagent SYNCHRONOUSLY and wait for its findings in
+            this same turn. Do NOT run it in the background — this is a
+            one-shot CI run with no second turn, so backgrounded work is lost
+            and the job exits green having posted nothing.
+
+            Then post the subagent's findings to the PR as a single comment
+            (use `gh pr comment`), starting with the heading
+            "## Security review (sub-agent)". Report its findings verbatim,
+            including its final "Swept N changed files..." line — do not
+            re-review the code yourself, do not add findings of your own, do
+            not reformat, and do not summarise further. You are a courier.
+          claude_args: |
+            --model claude-sonnet-5
+            --allowedTools "Task,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Grep,Glob"

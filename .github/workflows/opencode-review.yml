@@ -1,0 +1,40 @@
+name: OpenCode review
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  review:
+    if: github.event.label.name == 'review:opencode' || github.event.label.name == 'review:all'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: anomalyco/opencode/github@latest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          model: anthropic/claude-sonnet-5
+          use_github_token: true
+          prompt: |
+            Review this pull request. Read the full diff against the base
+            branch, plus enough surrounding code to judge it. If the
+            repository root contains an AGENTS.md with code review guidelines,
+            follow those guidelines strictly.
+
+            Do NOT post any comments yourself — your final message is posted
+            to the PR automatically. Write the complete review as your final
+            message, starting with the heading "## OpenCode review". For each
+            finding cite file and line, state the severity you assign, and
+            explain the failure scenario. If nothing qualifies, say so in one
+            line.

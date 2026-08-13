@@ -1,0 +1,58 @@
+name: Pi review
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  review:
+    if: github.event.label.name == 'review:pi' || github.event.label.name == 'review:all'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install -g @earendil-works/pi-coding-agent
+
+      # Pi has no GitHub Action and no repo-reading conventions of its own —
+      # the workflow assembles the context (diff + guidelines) explicitly.
+      # That's the point: with a minimal harness the whole mechanism is
+      # visible in ~20 lines of YAML.
+      - name: Run review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          git diff origin/${{ github.event.pull_request.base.ref }}...HEAD > /tmp/pr.diff
+
+          GUIDELINES="No repository review guidelines were provided."
+          if [ -f AGENTS.md ]; then
+            GUIDELINES="$(cat AGENTS.md)"
+          fi
+
+          pi -p -nt --provider anthropic --model claude-sonnet-5 \
+            @/tmp/pr.diff \
+            "Review the attached pull request diff for this NestJS service.
+
+          Repository review guidelines (follow strictly):
+          $GUIDELINES
+
+          For each finding cite file and line, state the severity you assign,
+          and explain the failure scenario. If nothing qualifies, say so in
+          one line." > /tmp/pi-review.md
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '## Pi review\n\n' > /tmp/comment.md
+          cat /tmp/pi-review.md >> /tmp/comment.md
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} --body-file /tmp/comment.md

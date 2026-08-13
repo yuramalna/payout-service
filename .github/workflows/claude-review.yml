@@ -1,0 +1,40 @@
+name: Claude review
+
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  review:
+    if: github.event.label.name == 'review:claude' || github.event.label.name == 'review:all'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: |
+            Review pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            Read the full diff against the base branch, plus enough surrounding
+            code to judge it. If the repository root contains an AGENTS.md with
+            code review guidelines, follow those guidelines strictly.
+
+            Post your review as a single PR comment (use `gh pr comment`).
+            Start the comment with the heading "## Claude Code review".
+            For each finding cite file and line, state the severity you assign,
+            and explain the failure scenario. If nothing qualifies, say so in
+            one line.
+          claude_args: |
+            --model claude-sonnet-5
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
